@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ImageSharp Server Demo</title>
+    <script type="module" src="main.js"></script>
+    <style>
+        /* ────────────────────────────────────────────────────────────────
+           Reset & basic layout
+        ──────────────────────────────────────────────────────────────── */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1e1e1e; /* Obsidian dark */
+            color: #d4d4d4; /* light gray foreground */
+            min-height: 100vh;
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Header
+        ──────────────────────────────────────────────────────────────── */
+        header {
+            background: #272727; /* slightly lighter than page */
+            color: #d4d4d4;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+            header h1 {
+                font-size: 1.1rem;
+                font-weight: 500;
+            }
+
+            header span {
+                font-size: 0.8rem;
+                opacity: 0.6;
+                font-family: monospace;
+            }
+
+        .badge {
+            background: #b5cea8; /* green accent */
+            color: #1e1e1e;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+
+        .badge-api {
+            background: #c586c0; /* purple accent */
+            color: #1e1e1e;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Layout & Sidebar
+        ──────────────────────────────────────────────────────────────── */
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 0;
+            min-height: calc(100vh - 52px);
+        }
+
+        .sidebar {
+            background: #272727;
+            border-right: 1px solid #3c3c3c;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            overflow-y: auto;
+            color: #d4d4d4;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: #6a6a6a; /* muted */
+            margin-bottom: 8px;
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Dropzone
+        ──────────────────────────────────────────────────────────────── */
+        #dropzone {
+            border: 2px dashed #3c3c3c;
+            border-radius: 10px;
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .2s, background .2s;
+            color: #d4d4d4;
+            font-size: 14px;
+        }
+
+            #dropzone.drag-over {
+                border-color: #b5cea8; /* success green */
+                background: #2a2a2a;
+            }
+
+            #dropzone svg {
+                margin-bottom: 8px;
+                opacity: .4;
+            }
+
+            #dropzone strong {
+                display: block;
+                font-size: 13px;
+                color: #d4d4d4;
+                margin-bottom: 4px;
+            }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Controls – button grid, sliders, etc.
+        ──────────────────────────────────────────────────────────────── */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+            .btn-grid.grid-filters {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+        button {
+            padding: 7px 12px;
+            border-radius: 6px;
+            border: 1px solid #3c3c3c;
+            background: #1e1e1e;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+            color: #d4d4d4;
+            font-family: inherit;
+        }
+
+            button:hover:not(:disabled) {
+                background: #2a2a2a;
+                border-color: #569cd6; /* cyan accent on hover */
+            }
+
+            button:active:not(:disabled) {
+                background: #3c3c3c;
+            }
+
+            button:disabled {
+                opacity: .4;
+                cursor: not-allowed;
+            }
+
+            button.primary {
+                background: #569cd6; /* cyan primary */
+                color: #1e1e1e;
+                border-color: #569cd6;
+            }
+
+                button.primary:hover:not(:disabled) {
+                    background: #6ab9f9;
+                }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+            .slider-row label {
+                min-width: 80px;
+                color: #d4d4d4;
+            }
+
+            .slider-row input[type=range] {
+                flex: 1;
+            }
+
+            .slider-row output {
+                min-width: 36px;
+                text-align: right;
+                color: #dcdcaa; /* yellow for values */
+                font-size: 12px;
+                font-family: monospace;
+            }
+
+        /* ────────────────────────────────────────────────────────────────
+           Metadata & Request Log
+        ──────────────────────────────────────────────────────────────── */
+        #metadata {
+            font-size: 12px;
+            font-family: monospace;
+            background: #272727;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: .75rem;
+            color: #d4d4d4;
+            line-height: 1.7;
+        }
+
+            #metadata .key {
+                color: #6a6a6a;
+            }
+
+            #metadata .val {
+                color: #b5cea8;
+                font-weight: 500;
+            }
+
+        #requestLog {
+            font-size: 11px;
+            font-family: monospace;
+            background: #272727;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: .6rem .75rem;
+            color: #d4d4d4;
+            line-height: 1.8;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+            #requestLog .entry {
+                color: #6a6a6a;
+            }
+
+                #requestLog .entry .method {
+                    color: #c586c0;
+                    font-weight: 600;
+                }
+
+                #requestLog .entry .ms {
+                    color: #b5cea8;
+                }
+
+                #requestLog .entry .err {
+                    color: #f44747;
+                }
+
+        /* ────────────────────────────────────────────────────────────────
+           Canvas area & toolbar
+        ──────────────────────────────────────────────────────────────── */
+        .canvas-area {
+            display: flex;
+            flex-direction: column;
+            background: #1e1e1e;
+        }
+
+        .toolbar {
+            background: #272727;
+            border-bottom: 1px solid #3c3c3c;
+            padding: .6rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #d4d4d4;
+        }
+
+        #status {
+            margin-left: auto;
+            font-size: 12px;
+            color: #6a6a6a;
+            font-family: monospace;
+        }
+
+        .image-pane {
+            background: #3c3c3c;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            flex: 1;
+        }
+
+        .pane {
+            background: #1e1e1e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            position: relative;
+        }
+
+        .pane-label {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: rgba(212,212,212,.4);
+        }
+
+        .pane img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .pane .placeholder {
+            color: rgba(212,212,212,.2);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Processing overlay & spinner
+        ──────────────────────────────────────────────────────────────── */
+        #processingOverlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,.5);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+            color: #d4d4d4;
+            font-size: 14px;
+        }
+
+            #processingOverlay.active {
+                display: flex;
+            }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(255,255,255,.2);
+            border-top-color: #b5cea8; /* green spinner */
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ────────────────────────────────────────────────────────────────
+           Download bar
+        ──────────────────────────────────────────────────────────────── */
+        .download-bar {
+            background: #272727;
+            border-top: 1px solid #3c3c3c;
+            padding: .6rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <svg width="20" height="20" fill="none" stroke="#569cd6" stroke-width="1.5" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="m21 15-5-5L5 21" />
+        </svg>
+        <h1>ImageSharp Server Demo</h1>
+        <span>SixLabors.ImageSharp + ASP.NET Core Minimal API</span>
+        <div class="badge">.NET 9</div>
+        <div class="badge-api">REST API</div>
+    </header>
+
+    <div class="layout">
+
+        <aside class="sidebar">
+
+            <div>
+                <div class="section-title">📁 Input Image</div>
+                <div id="dropzone">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    <strong>Drop an image here</strong>
+                    or click to browse
+                    <br /><small style="font-size:11px;margin-top:4px;display:block">
+                        JPEG · PNG · WebP · GIF · BMP · TIFF
+                    </small>
+                </div>
+                <input type="file" id="fileInput" accept="image/*" />
+            </div>
+
+            <div>
+                <div class="section-title">ℹ️ Metadata</div>
+                <div id="metadata"><span style="color:#9ca3af">Load an image to see metadata</span></div>
+            </div>
+
+            <div>
+                <div class="section-title">🔄 Transform</div>
+                <div class="btn-grid">
+                    <button id="btnFlipH" disabled>Flip H</button>
+                    <button id="btnFlipV" disabled>Flip V</button>
+                    <button id="btnRotate90" disabled>Rotate 90°</button>
+                    <button id="btnRotate180" disabled>Rotate 180°</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">🎨 Filters</div>
+                <div class="btn-grid grid-filters">
+                    <button id="btnGreyscale" disabled>Greyscale</button>
+                    <button id="btnSepia" disabled>Sepia</button>
+                    <button id="btnBlur" disabled>Blur</button>
+                    <button id="btnSharpen" disabled>Sharpen</button>
+                    <button id="btnOilPaint" disabled>Oil Paint</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">📐 Resize</div>
+                <div class="slider-row">
+                    <label>Max width</label>
+                    <input type="range" id="resizeWidth" min="100" max="2000" value="800" step="50" />
+                    <output id="resizeWidthOut">800px</output>
+                </div>
+                <button id="btnResize" class="primary" disabled style="width:100%;margin-top:8px">Resize</button>
+            </div>
+
+            <div>
+                <div class="section-title">☀️ Brightness &amp; Contrast</div>
+                <div class="slider-row">
+                    <label>Brightness</label>
+                    <input type="range" id="brightness" min="-100" max="100" value="0" />
+                    <output id="brightnessOut">0</output>
+                </div>
+                <div class="slider-row" style="margin-top:6px">
+                    <label>Contrast</label>
+                    <input type="range" id="contrast" min="-100" max="100" value="0" />
+                    <output id="contrastOut">0</output>
+                </div>
+                <button id="btnBrightness" class="primary" disabled style="width:100%;margin-top:8px">Apply</button>
+            </div>
+
+            <div>
+                <div class="section-title">⚙️ Output Quality</div>
+                <div class="slider-row">
+                    <label>JPEG quality</label>
+                    <input type="range" id="quality" min="10" max="100" value="85" />
+                    <output id="qualityOut">85</output>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">📡 API Requests</div>
+                <div id="requestLog"><span style="color:#9ca3af">No requests yet</span></div>
+            </div>
+
+            <div>
+                <button id="btnReset" disabled style="width:100%">↺ Reset to original</button>
+            </div>
+
+        </aside>
+
+        <main class="canvas-area">
+
+            <div class="toolbar">
+                <span style="font-size:12px;color:#6a6a6a">Before / After comparison</span>
+                <span id="status">Ready — drop an image to start</span>
+            </div>
+
+            <div class="image-pane">
+
+                <div class="pane">
+                    <span class="pane-label">Original</span>
+                    <div class="placeholder" id="originalPlaceholder">Upload an image to get started</div>
+                    <img id="originalImg" style="display:none" alt="Original" />
+                </div>
+
+                <div class="pane" style="position:relative">
+                    <span class="pane-label">Processed</span>
+                    <div class="placeholder" id="processedPlaceholder">Output will appear here</div>
+                    <img id="processedImg" style="display:none" alt="Processed" />
+                    <div id="processingOverlay">
+                        <div class="spinner"></div>
+                        <span id="processingLabel">Sending to server…</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="download-bar">
+                <button id="btnDownloadCurrent" disabled>⬇ Download current result</button>
+                <button id="btnDownloadPng" disabled>⬇ Download as PNG</button>
+                <button id="btnDownloadWebp" disabled>⬇ Download as WebP</button>
+            </div>
+
+        </main>
+    </div>
+
+</body>
+</html>
