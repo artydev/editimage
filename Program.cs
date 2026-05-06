@@ -4,6 +4,8 @@ using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,13 +28,101 @@ app.MapPost("/process/metadata", async (HttpRequest req) =>
     var format = image.Metadata.DecodedImageFormat?.Name ?? "unknown";
     return Results.Ok(new MetadataResponse
     {
-        Width  = image.Width,
+        Width = image.Width,
         Height = image.Height,
         Format = format,
         Frames = image.Frames.Count,
         SizeKb = Math.Round(bytes.Length / 1024.0, 1)
     });
 });
+
+// ── Batch Processing (Chain Multiple Filters) ───────────────────────────────
+app.MapPost("/process/batch", async (HttpRequest req, int quality = 85) =>
+{
+    // Enable buffering to allow multiple reads of the request body
+    req.EnableBuffering();
+
+    var bytes = await ReadBody(req);
+
+    // Reset position for deserialization
+    req.Body.Position = 0;
+
+    var operations = await JsonSerializer.DeserializeAsync<List<ImageOperation>>(req.Body, new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    });
+
+    // Reset position again for any downstream middleware
+    req.Body.Position = 0;
+
+    if (operations == null || operations.Count == 0)
+        return Results.BadRequest("No operations provided");
+
+    using var image = Image.Load(bytes);
+
+    foreach (var op in operations)
+    {
+        ApplyOperation(image, op);
+    }
+
+    return JpegResult(image, quality);
+});
+
+static void ApplyOperation(Image image, ImageOperation op)
+{
+    switch (op.Filter?.ToLowerInvariant())
+    {
+        case "greyscale":
+        case "grayscale":
+            image.Mutate(x => x.Grayscale());
+            break;
+
+        case "sepia":
+            image.Mutate(x => x.Sepia());
+            break;
+
+        case "flip":
+            image.Mutate(x =>
+            {
+                if (op.Horizontal) x.Flip(FlipMode.Horizontal);
+                if (op.Vertical) x.Flip(FlipMode.Vertical);
+            });
+            break;
+
+        case "rotate":
+            image.Mutate(x => x.Rotate(op.Degrees));
+            break;
+
+        case "resize":
+            if (image.Width > op.MaxWidth)
+            {
+                var newHeight = (int)((float)image.Height * op.MaxWidth / image.Width);
+                image.Mutate(x => x.Resize(op.MaxWidth, newHeight));
+            }
+            break;
+
+        case "brightness":
+        case "brightness-contrast":
+            float b = 1.0f + (op.Brightness ?? 0) / 100f;
+            float c = 1.0f + (op.Contrast ?? 0) / 100f;
+            image.Mutate(x => x.Brightness(b).Contrast(c));
+            break;
+
+        case "blur":
+            image.Mutate(x => x.GaussianBlur(op.Sigma ?? 3f));
+            break;
+
+        case "sharpen":
+            image.Mutate(x => x.GaussianSharpen(op.Sigma ?? 3f));
+            break;
+
+        case "oil-paint":
+        case "oilpaint":
+            image.Mutate(x => x.OilPaint(op.Levels ?? 10, op.BrushSize ?? 4));
+            break;
+    }
+}
 
 // ── Greyscale ────────────────────────────────────────────────────────────────
 app.MapPost("/process/greyscale", async (HttpRequest req, int quality = 85) =>
@@ -94,7 +184,7 @@ app.MapPost("/process/brightness-contrast", async (HttpRequest req,
     var bytes = await ReadBody(req);
     using var image = Image.Load(bytes);
     float b = 1.0f + brightness / 100f;
-    float c = 1.0f + contrast   / 100f;
+    float c = 1.0f + contrast / 100f;
     image.Mutate(x => x.Brightness(b).Contrast(c));
     return JpegResult(image, quality);
 });
@@ -122,7 +212,7 @@ app.MapPost("/process/sharpen", async (HttpRequest req, float sigma = 3f, int qu
 app.MapPost("/process/oil-paint", async (HttpRequest req, int levels = 10, int brushSize = 4, int quality = 85) =>
 {
     var bytes = await ReadBody(req);
-    using var image = Image.Load<Rgba32>(bytes);
+    using var image = Image.Load(bytes);
 
     // Provide both levels and brushSize
     image.Mutate(x => x.OilPaint(levels, brushSize));
@@ -154,7 +244,7 @@ app.MapPost("/process/convert/webp", async (HttpRequest req, int quality = 85) =
 
 app.Run();
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// ── Shared helpers ───────────────────────────────────────────────────────────
 static async Task<byte[]> ReadBody(HttpRequest req)
 {
     using var ms = new MemoryStream();
@@ -178,4 +268,19 @@ public class MetadataResponse
     public string Format { get; set; } = string.Empty;
     public int Frames { get; set; }
     public double SizeKb { get; set; }
+}
+
+// DTO for batch processing operations
+public class ImageOperation
+{
+    public string? Filter { get; set; }
+    public bool Horizontal { get; set; }
+    public bool Vertical { get; set; }
+    public float Degrees { get; set; }
+    public int MaxWidth { get; set; }
+    public float? Brightness { get; set; }
+    public float? Contrast { get; set; }
+    public float? Sigma { get; set; }
+    public int? Levels { get; set; }
+    public int? BrushSize { get; set; }
 }

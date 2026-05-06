@@ -96,6 +96,11 @@ async function callApi(label, endpoint, params = {}, mimeType = 'image/jpeg') {
         ok = true;
         logRequest('POST', endpoint, ms, true);
         displayProcessed(blob, mimeType);
+
+        // Update originalBytes to processed result so next filter applies to already processed image
+        const buffer = await blob.arrayBuffer();
+        originalBytes = new Uint8Array(buffer);
+
         setStatus(`✅ ${label} — ${ms}ms (${(blob.size / 1024).toFixed(1)} KB)`);
     } catch (err) {
         const ms = Math.round(performance.now() - t0);
@@ -217,7 +222,7 @@ document.getElementById('btnSharpen').addEventListener('click', () =>
 
 // Click listener for the new Oil Paint button
 document.getElementById('btnOilPaint').addEventListener('click', () =>
-    callApi('Oil Paint', '/process/oil-paint', { radius: 4, quality: getQuality() })
+    callApi('Oil Paint', '/process/oil-paint', { brushSize: 4, quality: getQuality() })
 );
 
 document.getElementById('btnResize').addEventListener('click', () => {
